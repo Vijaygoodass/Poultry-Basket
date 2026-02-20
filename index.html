@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Catch The Falling Objects - Final</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background: #87CEEB;
+}
+
+canvas {
+    display: block;
+}
+
+#overlay, #gameOverScreen {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+button {
+    padding: 12px 25px;
+    font-size: 18px;
+    margin-top: 20px;
+    cursor: pointer;
+    border-radius: 8px;
+    border: none;
+    background: #ffcc00;
+}
+</style>
+</head>
+
+<body>
+
+<div id="overlay">
+    <h1>🐔 Catch The Falling Objects</h1>
+    <button onclick="startGame()">Start Game</button>
+</div>
+
+<div id="gameOverScreen" style="display:none;">
+    <h1>Game Over</h1>
+    <h2 id="finalScore"></h2>
+    <h3 id="highScoreText"></h3>
+    <button onclick="restartGame()">Restart</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<!-- Sounds -->
+<audio id="catchSound" src="catch.mp3"></audio>
+<audio id="bombSound" src="bomb.mp3"></audio>
+<audio id="bgMusic" src="music.mp3" loop></audio>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    basket.y = canvas.height - 90;
+});
+
+let basket = {
+    width: 160,
+    height: 80,
+    x: canvas.width/2 - 80,
+    y: canvas.height - 90
+};
+
+let objects = [];
+let particles = [];
+let score = 0;
+let lives = 3;
+let level = 1;
+let highScore = localStorage.getItem("highScore") || 0;
+let gameRunning = false;
+
+const catchSound = document.getElementById("catchSound");
+const bombSound = document.getElementById("bombSound");
+const bgMusic = document.getElementById("bgMusic");
+
+/* -------- IMAGE LOADING -------- */
+const eggImg = new Image();
+eggImg.src = "egg.png";
+
+const henImg = new Image();
+henImg.src = "hen.png";
+
+const bombImg = new Image();
+bombImg.src = "bomb.png";
+
+const basketImg = new Image();
+basketImg.src = "basket.png";
+
+/* -------- CONTROLS -------- */
+function moveBasket(x) {
+    basket.x = x - basket.width/2;
+    if (basket.x < 0) basket.x = 0;
+    if (basket.x > canvas.width - basket.width)
+        basket.x = canvas.width - basket.width;
+}
+
+document.addEventListener("mousemove", e => moveBasket(e.clientX));
+document.addEventListener("touchmove", e => moveBasket(e.touches[0].clientX));
+
+/* -------- CREATE OBJECT -------- */
+function createObject() {
+    let rand = Math.random();
+    let type = "egg";
+
+    if (rand < 0.1) type = "hen";
+    if (rand > 0.93) type = "bomb";
+
+    objects.push({
+        x: Math.random() * (canvas.width - 60),
+        y: -60,
+        width: 60,
+        height: 60,
+        type: type,
+        speed: 2 + level * 0.9
+    });
+}
+
+/* -------- PARTICLES -------- */
+function createParticles(x, y) {
+    for (let i = 0; i < 20; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            size: Math.random()*6+2,
+            speedX: (Math.random()-0.5)*6,
+            speedY: (Math.random()-0.5)*6,
+            life: 30
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length-1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.speedX;
+        p.y += p.speedY;
+        p.life--;
+        if (p.life <= 0) particles.splice(i,1);
+    }
+}
+
+function drawParticles() {
+    particles.forEach(p => {
+        ctx.fillStyle = "yellow";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+}
+
+/* -------- UPDATE OBJECTS -------- */
+function updateObjects() {
+    for (let i = objects.length-1; i >= 0; i--) {
+        let obj = objects[i];
+        obj.y += obj.speed;
+
+        if (
+            obj.y + obj.height > basket.y &&
+            obj.x < basket.x + basket.width &&
+            obj.x + obj.width > basket.x
+        ) {
+            if (obj.type === "bomb") {
+
+                // 🔥 BOMB SOUND PRIORITY
+                catchSound.pause();
+                catchSound.currentTime = 0;
+                bgMusic.pause();
+                bombSound.currentTime = 0;
+                bombSound.play();
+
+                endGame();
+                return;
+            }
+
+            if (obj.type === "egg") score += 10;
+            if (obj.type === "hen") score += 50;
+
+            catchSound.currentTime = 0;
+            catchSound.play();
+
+            createParticles(obj.x+30, obj.y+30);
+            objects.splice(i,1);
+        }
+
+        else if (obj.y > canvas.height) {
+            if (obj.type === "egg") {
+                lives--;
+                if (lives <= 0) {
+                    endGame();
+                    return;
+                }
+            }
+            objects.splice(i,1);
+        }
+    }
+}
+
+/* -------- DRAW -------- */
+function drawObjects(obj) {
+    if (obj.type === "egg") ctx.drawImage(eggImg, obj.x, obj.y, obj.width, obj.height);
+    if (obj.type === "hen") ctx.drawImage(henImg, obj.x, obj.y, obj.width, obj.height);
+    if (obj.type === "bomb") ctx.drawImage(bombImg, obj.x, obj.y, obj.width, obj.height);
+}
+
+function drawUI() {
+    ctx.fillStyle = "black";
+    ctx.font = "20px Arial";
+    ctx.fillText("Score: " + score, 20, 30);
+    ctx.fillText("Lives: " + lives, canvas.width - 120, 30);
+    ctx.fillText("Level: " + level, canvas.width/2 - 40, 30);
+    ctx.fillText("High Score: " + highScore, 20, 60);
+}
+
+function updateLevel() {
+    level = Math.min(9, Math.floor(score/250)+1);
+}
+
+/* -------- GAME LOOP -------- */
+function gameLoop() {
+    if (!gameRunning) return;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if (Math.random() < 0.02 + level*0.01)
+        createObject();
+
+    updateObjects();
+    updateParticles();
+
+    objects.forEach(drawObjects);
+    drawParticles();
+
+    ctx.drawImage(basketImg, basket.x, basket.y, basket.width, basket.height);
+
+    drawUI();
+    updateLevel();
+
+    requestAnimationFrame(gameLoop);
+}
+
+/* -------- START -------- */
+function startGame() {
+    document.getElementById("overlay").style.display = "none";
+    bgMusic.volume = 0.4;
+    bgMusic.play();
+    gameRunning = true;
+    gameLoop();
+}
+
+/* -------- END -------- */
+function endGame() {
+    gameRunning = false;
+
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("highScore", highScore);
+    }
+
+    document.getElementById("finalScore").innerText = "Score: " + score;
+    document.getElementById("highScoreText").innerText = "High Score: " + highScore;
+    document.getElementById("gameOverScreen").style.display = "flex";
+}
+
+/* -------- RESTART -------- */
+function restartGame() {
+    objects = [];
+    particles = [];
+    score = 0;
+    lives = 3;
+    level = 1;
+    document.getElementById("gameOverScreen").style.display = "none";
+    bgMusic.play();
+    gameRunning = true;
+    gameLoop();
+}
+</script>
+
+</body>
+</html>
